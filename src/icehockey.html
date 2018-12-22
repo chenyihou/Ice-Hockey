@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <script src="/socket.io/socket.io.js"></script>
+    <title>CurlingGame</title>
+    <style>
+        body {
+    	display: flex;
+        flex-direction: column;
+		height: 100%; 
+		overflow: hidden;
+        align-items: center;
+    }
+    #login {
+        width: 15rem;
+        height: 15rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        border: 0.05rem solid;
+        border-radius: 0.4rem;
+        border-color: rgba(200,0,200,0.3);
+		
+    }
+    input {
+    	border-style: none;
+    	border-radius: 0.4rem;
+    	border: 0.05rem solid;
+    	border-color: #ff000060;
+    	outline: none;
+    }
+    #buttons, #score{
+    	width: 10rem;
+    	display: flex;
+    	justify-content: space-between;
+    	margin: 10px;
+    }
+    button {
+    	width: 4rem;
+    	border: none;
+    	background-color: rgba(50,0,50,0.2);	
+    	border-radius: 0.5rem;
+    	color: white;
+    	outline: none;
+    	margin: 5px
+    }
+    #yellow:hover {
+    	background-color: yellow;
+    }
+    #pink:hover {
+    	background-color: pink;
+    }
+
+    #start {
+    	width: 8rem;
+    }
+    #start:hover{
+    	background-color: white;
+    	color: green;
+    }    
+    #quit:hover{
+    	background-color: red;
+    	color: white;
+    }
+    #wrapper{
+    	margin: 30px;
+    	display: flex;
+    	justify-content: space-between;
+    	width: 30rem;
+    }
+    .info {
+    	display: flex;
+    	width: 10rem;
+    	justify-content: space-around;
+    }
+
+    #infos{
+
+    }
+    </style>
+</head>
+
+<body>
+    <canvas height="500" width="700"></canvas>
+    <div id="wrapper">
+        <div id="infos">
+            <div class="info">
+                <p>your name is: <p id="yourName"></p>
+                </p>
+            </div>
+            <div class="info">
+                <p>your team is: <p id="yourTeam"></p>
+                </p>
+            </div>
+            <div class="info">
+                <p>your turn?: <p id="yourTurn">audience</p>
+                </p>
+            </div>
+        </div>
+        <br>
+        <div id="login">
+            <h2>Curling Game</h2>
+            <div id="score">
+                <span id="yellowName">player1</span>
+                <span id="pinkName">player2</span>
+            </div>
+            <input id="userName" type="text" placeholder="  user name">
+            <div id="buttons">
+                <button id="yellow">yellow</button>
+                <button id="pink">pink</button>
+            </div>
+            <button id="start">start game</button>
+            <button id="quit">QUIT</button>
+        </div>
+    </div>
+</body>
+<script>
+// declare elements
+const canvas = document.querySelector('canvas')
+const context = canvas.getContext('2d')
+const start = document.querySelector('#start')
+const userName = document.querySelector('#userName')
+const yellow = document.querySelector('#yellow')
+const pink = document.querySelector('#pink')
+const yellowName = document.querySelector('#yellowName')
+const pinkName = document.querySelector('#pinkName')
+const quit = document.querySelector('#quit')
+const yourName = document.querySelector('#yourName')
+const yourTeam = document.querySelector('#yourTeam')
+const yourTurn = document.querySelector('#yourTurn')
+
+
+// define variables
+let balls = []
+let socket = io('http://' + window.document.location.host)
+//let socket = io('http://localhost:3000')
+let team = ''
+let isMouseDown = false
+let ballBeingMoved
+let currentX
+let currentY
+let deltaX
+let deltaY
+let authentication = false
+let gameStart = false
+let playerName = ''
+let myTurn = false
+let belt = {}
+
+// define functions
+
+const drawCircles = (size, position) => {
+    // draw red white blue circles
+    let colors = ['red', 'white', 'blue']
+    for (let i = 0; i < 3; i++) {
+        context.beginPath()
+        context.lineWidth = size
+        context.strokeStyle = colors[i]
+        context.arc(position.x, position.y, (i + 1.5) * size, 0, 2 * Math.PI)
+        context.stroke()
+    }
+}
+
+const drawLine = (x1, y1, x2, y2) => {
+    // draw a line with given point
+    context.beginPath()
+    context.lineWidth = 1
+    context.strokeStyle = 'black'
+    context.moveTo(x1, y1)
+    context.lineTo(x2, y2)
+    context.stroke()
+
+}
+
+const drawBalls = (offset, size) => {
+    // draw balls, offset and size is used for mapping the balls
+    balls.forEach(ball => {
+        // draw outter circle
+        context.beginPath()
+        context.lineWidth = 1
+        context.strokeStyle = 'black'
+        context.arc(size * (ball.x - offset.x), size * (ball.y - offset.y), ball.r * size, 0, 2 * Math.PI)
+        context.stroke()
+        context.fillStyle = 'grey'
+        context.fill()
+
+        // draw inner circle
+        context.beginPath()
+        context.fillStyle = ball.color
+        context.arc(size * (ball.x - offset.x), size * (ball.y - offset.y), 0.6 * ball.r * size, 0, 2 * Math.PI)
+        context.stroke()
+        context.fill()
+    })
+}
+
+const drawBelt = () => {
+    if (belt.now === undefined) return
+    // if there is no user hit the ball
+
+    let maxLength = 30
+    // max length of belt
+    let nowLength = Math.sqrt(Math.pow(belt.origin.x - belt.now.x, 2) + Math.pow(belt.origin.y - belt.now.y, 2))
+    // the length of user's mouse and origin of ball
+    if (nowLength > maxLength) {
+        let x = maxLength / nowLength * (belt.now.x - belt.origin.x) + belt.origin.x
+        let y = maxLength / nowLength * (belt.now.y - belt.origin.y) + belt.origin.y
+        nowLength = maxLength
+        belt.now = { x, y }
+    }
+
+    drawLine(belt.origin.x, belt.origin.y, belt.now.x, belt.now.y)
+    // draw belt
+}
+
+const drawCanvas = () => {
+    context.clearRect(0, 0, canvas.width, canvas.height)
+
+    // draw left part
+    drawCircles(50, { x: 250, y: 250 })
+    drawBalls({ x: 505, y: -15 }, 50 / 15)
+
+    // draw divding line
+    let pathLength = canvas.height - 40
+    drawLine(500, 0, 500, canvas.height)
+    drawLine(650, 0, 650, pathLength)
+    drawLine(500, pathLength, 650, pathLength)
+    drawLine(500, 0, 650, 0)
+
+    // draw right part
+    drawCircles(15, { x: 580, y: 60 })
+    drawBalls({ x: 0, y: 0 }, 1)
+
+    // draw belt
+    drawBelt()
+
+}
+
+// register socketio events
+socket.on('ballsLocation', function(data) {
+    // renew the position of balls
+    let locationData = JSON.parse(data)
+    if (isMouseDown) {
+        // if this is the player, don't change the ballBeingMoved
+        for (let i = 0; i < balls.length; i++) {
+            if (i !== ballBeingMoved.i) {
+                balls[i] = locationData[i]
+            }
+        }
+
+    } else {
+        // this is not the present player
+        balls = locationData
+    }
+    drawCanvas()
+
+})
+
+socket.on('switchTurn', data => {
+    // change the turn status
+    myTurn = !myTurn
+    if (!authentication)
+        yourTurn.innerHTML = 'audience'
+    else if (myTurn)
+        yourTurn.innerHTML = 'true'
+    else
+        yourTurn.innerHTML = 'false'
+})
+
+socket.on('gameStart', data => {
+    // when there are two players
+    gameStart = true
+    if (!authentication)
+        yourTurn.innerHTML = 'audience'
+    else if (myTurn)
+        yourTurn.innerHTML = 'true'
+    else
+        yourTurn.innerHTML = 'false'
+
+
+})
+
+socket.on('newPlayer', data => {
+    // a new player is registered
+    let players = JSON.parse(data)
+    // change the name of player1 or player2
+    if (players.length === 1) {
+        if (players[0].team === 'yellow')
+            yellowName.innerHTML = players[0].name
+        else
+            pinkName.innerHTML = players[0].name
+
+    } else if (players[0].team === 'yellow') {
+        yellowName.innerHTML = players[0].name
+        pinkName.innerHTML = players[1].name
+    } else {
+        yellowName.innerHTML = players[1].name
+        pinkName.innerHTML = players[0].name
+    }
+})
+
+socket.on('gameEnd', data => {
+    // some player quit the game, renew everything
+    authentication = false
+    gameStart = false
+    playerName = ''
+    myTurn = false
+    belt = {}
+    team = ''
+    yellowName.innerHTML = 'player1'
+    pinkName.innerHTML = 'player2'
+    yourName.innerHTML = ''
+    yourTeam.innerHTML = ''
+    yourTurn.innerHTML = 'false'
+})
+
+socket.on('renewBelt', data => {
+    // one player hit the ball, draw belt
+    if (!isMouseDown)
+        belt = JSON.parse(data)
+    drawCanvas()
+})
+
+const getBallAtLocation = (aCanvasX, aCanvasY) => {
+    // return selected ball or null
+    for (let i = 0; i < balls.length; i++) {
+        if (aCanvasX - balls[i].x < balls[i].r &&
+            balls[i].x - aCanvasX > -balls[i].r &&
+            balls[i].y - aCanvasY < balls[i].r &&
+            balls[i].y - aCanvasY > -balls[i].r) return balls[i]
+    }
+    return null
+}
+
+const mouseDownHandler = e => {
+    e.stopPropagation()
+    e.preventDefault()
+    // if it's not your play, return
+    if (!authentication) {
+        alert('please register first')
+        return
+    }
+    if (!myTurn) {
+        alert("it's not your turn")
+        return
+    }
+    if (!gameStart) {
+        alert("another player is on the way")
+        return
+    }
+    let rect = canvas.getBoundingClientRect()
+    let canvasX = e.pageX - rect.left
+    let canvasY = e.pageY - rect.top
+
+    ballBeingMoved = getBallAtLocation(canvasX, canvasY)
+
+    if (ballBeingMoved) {
+        // can only move your own color ball
+        if (ballBeingMoved.color !== team) {
+            alert('You can only move your ball')
+            return
+        }
+        deltaX = ballBeingMoved.x - canvasX
+        deltaY = ballBeingMoved.y - canvasY
+        // update belt
+        belt.origin = { x: ballBeingMoved.x, y: ballBeingMoved.y }
+        // baseX and baseY are the selected ball's initial position
+        isMouseDown = true
+    }
+}
+
+const mouseMoveHandler = e => {
+    e.stopPropagation()
+    e.preventDefault()
+
+    if (isMouseDown) {
+
+        let rect = canvas.getBoundingClientRect()
+        let canvasX = e.pageX - rect.left
+        let canvasY = e.pageY - rect.top
+        belt.now = { x: canvasX, y: canvasY }
+        socket.emit('renewBelt', JSON.stringify(belt))
+        // change selected ball's postion
+    }
+}
+
+const mouseUpHandler = e => {
+    e.stopPropagation()
+    e.preventDefault()
+    if (isMouseDown) {
+        drawCanvas()
+        isMouseDown = false
+        let x = ballBeingMoved.x - belt.now.x
+        let y = ballBeingMoved.y - belt.now.y
+        let v = Math.sqrt(x * x + y * y)
+        ballBeingMoved.v = v*0.5
+        ballBeingMoved.vx = x*0.5
+        ballBeingMoved.vy = y*0.5
+        socket.emit('catapult', JSON.stringify(balls))
+        // server will handle catapult
+        socket.emit('switchTurn')
+        // reset selected ball and status of mouse
+        ballBeingMoved = null
+    }
+}
+
+const submitHandler = e => {
+    start.style.backgroundColor = 'rgba(50,0,50,0.2)'
+
+    // check if the information is enough
+    if (authentication) {
+        userName.value = ''
+        alert('You already registerred, please wait another player')
+        return
+    }
+    if (team === '') {
+        userName.value = ''
+        alert('please select your team')
+        return
+    }
+    if (userName.value === '') {
+        userName.value = ''
+        alert('Your name cannot be empty')
+        return
+    }
+
+    let name = userName.value
+
+    fetch('http://localhost:3000/login', {
+            method: 'POST',
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ name, team })
+        })
+        .then(res => res.json())
+        .then(json => {
+            // server will check if there are already 2 players
+            // or if the color is selected
+            if (json.authentication) {
+                authentication = true
+                playerName = name
+                socket.emit('register')
+                // register will renew player information and broadcast
+                yourName.innerHTML = name
+                yourTeam.innerHTML = team
+                if (team === 'yellow') {
+                    myTurn = true
+                    yellowName.innerHTML = name
+                } else {
+                    pinkName.innerHTML = name
+
+                }
+            } else {
+                alert(json.msg)
+            }
+        })
+
+    userName.value = ''
+
+}
+
+const quitHandler = e => {
+    if (!gameStart) {
+        alert('game has not started yet')
+        return
+    }
+    if(!authentication){
+    	alert('You are audience')
+    	return
+    }
+    socket.emit('quit', playerName)
+    // server will renew the state of game
+}
+
+const keydownHandler=e=>{
+	if(e.key==='F5'&&authentication)
+		socket.emit('quit', playerName)
+		
+}
+
+// register eventHandler
+canvas.addEventListener('mousedown', mouseDownHandler)
+canvas.addEventListener('mousemove', mouseMoveHandler)
+canvas.addEventListener('mouseup', mouseUpHandler)
+start.addEventListener('click', submitHandler)
+quit.addEventListener('click', quitHandler)
+document.addEventListener('keydown',keydownHandler)
+yellow.addEventListener('click', e => {
+    team = 'yellow'
+    start.style.backgroundColor = 'yellow'
+})
+pink.addEventListener('click', e => {
+    team = 'pink'
+    start.style.backgroundColor = 'pink'
+})
+</script>
+
+</html>
