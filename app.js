@@ -2,8 +2,8 @@ const app = require('http').createServer(handler)
 const io = require('socket.io')(app) //wrap server app in socket io capability
 const fs = require("fs") //need to read static files
 const url = require("url") //to parse url strings
-
-const PORT = process.env.PORT || 3000
+const path = require("path")
+const PORT = process.env.PORT || 3001
 
 let players = []
 let balls = []
@@ -251,7 +251,8 @@ function handler(request, response) {
 
         if (request.method == "GET") {
             //handle GET requests as static file requests
-            fs.readFile(ROOT_DIR + urlObj.pathname, function(err, data) {
+            console.log(path.join(__dirname, ROOT_DIR, urlObj.pathname))
+            fs.readFile(path.join(__dirname, ROOT_DIR, urlObj.pathname), function(err, data) {
                 if (err) {
                     //report error to console
                     console.log("ERROR: " + JSON.stringify(err))
